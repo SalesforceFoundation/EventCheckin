@@ -1,0 +1,650 @@
+<apex:page controller="EventCheckinController" showHeader="false" standardStylesheets="false" sidebar="false">
+    <!-- INCUDE JQUERY -->
+    <apex:includescript value="https://ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js" />
+
+    <!-- INCUDE TWITTER BOOTSTRAP -->
+    <apex:includeScript value="{!URLFOR($Resource.bootstrap, 'bootstrap/js/bootstrap.min.js')}" />   
+    <apex:styleSheet value="{!URLFOR($Resource.bootstrap, 'bootstrap/css/bootstrap.min.css')}" />
+
+    <!-- INCUDE TABLESORTER -->
+    <!-- <apex:includeScript value="{!URLFOR($Resource.tablesorter, 'tablesorter-master/js/jquery.tablesorter.js')}" />
+    <apex:styleSheet value="{!URLFOR($Resource.tablesorter, 'tablesorter-master/css/theme.default.css')}" / -->
+    
+    <apex:includeScript value="{!URLFOR($Resource.dataTables, 'DataTables/media/js/jquery.dataTables.js')}" />
+    <!-- <apex:includeScript value="{!URLFOR($Resource.DT_BootstrapJS)}" /> -->
+    <!-- <apex:includeScript value="{!URLFOR($Resource.dataTables, 'DataTables/media/js/DT_bootstrap.js')}" /> -->
+    <!-- <apex:includeScript value="{!URLFOR($Resource.dataTables, 'DataTables/extras/TableTools/media/js/TableTools.js')}" /> -->
+    <apex:styleSheet value="{!URLFOR($Resource.dataTables, 'DataTables/media/DT_bootstrap.css')}" />
+    
+    <style>
+        .table th {text-align:center;}
+        .table td {text-align:center;}
+        div.dataTables_length select {margin-bottom:0px;height:30px;}
+        .table .progress {margin-bottom:0px;}
+        div.dataTables_info {padding-top: 5px;}
+        div.dataTables_length label{margin-left:10px;}
+    </style>
+
+    <script>
+        var j$ = jQuery.noConflict();
+
+        j$(document).ready(function(){
+            
+            //j$("#memberTable").tablesorter({theme: 'default'});
+            j$("[data-progress='0']").hide(200);
+
+            
+            
+            j$.extend( j$.fn.dataTableExt.oStdClasses, {
+                "sWrapper": "dataTables_wrapper form-inline"
+            } );
+            
+            j$("#hostFilter").change(function() {
+                showRowsHostFilter( j$(this).val() );
+            });
+
+            j$("#clearSearch").click(function() {
+                clearFilter();
+            });
+
+            // j$("#searchFilter").keypress(function() {
+            //   showRowsSearchFilter( j$(this).val() );
+            // });
+
+            j$("#searchFilter").bind('keyup', function (e) {    
+                showRowsSearchFilter( j$(this).val() );
+            });
+
+            j$("#progressFilter").change(function() {
+              showRowsProgressFilter( j$(this).val() );
+            });
+
+            //create the data to save (CampaignMember)
+            j$(".modal .saveButton").click(function() {
+                var modal = j$(this).closest(".modal");
+                modalId = j$(modal).data('id');
+                //j$('a.btn', row).addClass('disabled');
+
+                // create a new sObject data structure with the Id set to this object
+                var obj = new Object();
+                obj["Id"] = modalId;
+
+                // get each value from the form input controls that are visible and put them into the object
+                j$('[data-input]:visible', modal).each(function() {
+                    var ctl = (j$(this).is('input, textarea, select')) ? this : j$('input, textarea, select', this).first();
+                    if (ctl) {
+                        var str = j$(ctl).val().trim();
+
+                        // convert numbers and dates when the controls have class "number" or "date" (also strip commas and $ and fix %)
+                        var val;
+                        if ( j$(ctl).is(".number") || j$(this).is(".number") ) {
+                            var pct = str.indexOf('%');
+                            if (isNaN(val)) {
+                                val = '[invalid number]';
+                            } else {
+                                val = parseFloat( str.replace(/[$,%]/g, "") );
+                                if (pct > 0)
+                                    val = val / 100;
+                            }
+
+                        } else if ( j$(ctl).is(".date") || j$(this).is(".date") ) {
+                            if (str != '') {
+                                var dt = new Date(Date.parse(str));
+                                if (isNaN(dt.getFullYear())) 
+                                    val = '[invalid date]';
+                                else
+                                    val = dt.getFullYear() + '-' + (dt.getMonth() + 1) + '-' + dt.getDate();
+                            }
+
+                            if (str != j$(this).data("value")) {
+                                j$('span.label', j$(this).parent()).hide();
+                            }
+                        } else {
+                            val = str;
+                        }
+
+                        // set the value to save in the object
+                        obj[ j$(this).attr('data-input') ] = (val===undefined || val == "") ? null : val;
+                    }
+                });
+                
+                //save using JS Remoting
+                console.log('SAVING: \n' + JSON.stringify(obj));
+                Visualforce.remoting.Manager.invokeAction(
+                '{!$RemoteAction.EventCheckinController.saveMember}', JSON.stringify(obj),
+                function(result, event){
+                        var modal = j$(".datamodal[data-id='" + modalId + "']");
+                        j$('a.btn', modal).removeClass('disabled');
+
+                   if (event.status) {
+                    location.reload();
+                            
+                   } else {
+                      var err = event.message + ((event.type === 'exception') ? ('\n' + event.where) : '');
+                      //console.log(err);
+
+                      var htm = '<div class="alert alert-error"><button type="button" class="close" data-dismiss="alert">&times;</button><b>Error:</b> ' + err + '</div>';
+                      j$("div#modal-body", modal).first().append(htm);
+                   }
+                }, 
+                {escape: true}
+              ); 
+
+            });
+            
+
+            //create the data to save (New Contact)
+            j$(".modal .contactSaveButton").click(function() {
+                var modal = j$(this).closest(".modal");
+                modalId = j$(modal).data('id');
+                //j$('a.btn', row).addClass('disabled');
+
+                // create a new sObject data structure with the Id set to this object
+                var obj = new Object();
+                obj["Id"] = modalId;
+
+                // get each value from the form input controls that are visible and put them into the object
+                j$('[data-input]:visible', modal).each(function() {
+                    var ctl = (j$(this).is('input, textarea, select')) ? this : j$('input, textarea, select', this).first();
+                    if (ctl) {
+                        var str = j$(ctl).val().trim();
+
+                        // convert numbers and dates when the controls have class "number" or "date" (also strip commas and $ and fix %)
+                        var val;
+                        if ( j$(ctl).is(".number") || j$(this).is(".number") ) {
+                            var pct = str.indexOf('%');
+                            if (isNaN(val)) {
+                                val = '[invalid number]';
+                            } else {
+                                val = parseFloat( str.replace(/[$,%]/g, "") );
+                                if (pct > 0)
+                                    val = val / 100;
+                            }
+
+                        } else if ( j$(ctl).is(".date") || j$(this).is(".date") ) {
+                            if (str != '') {
+                                var dt = new Date(Date.parse(str));
+                                if (isNaN(dt.getFullYear())) 
+                                    val = '[invalid date]';
+                                else
+                                    val = dt.getFullYear() + '-' + (dt.getMonth() + 1) + '-' + dt.getDate();
+                            }
+
+                            if (str != j$(this).data("value")) {
+                                j$('span.label', j$(this).parent()).hide();
+                            }
+                        } else {
+                            val = str;
+                        }
+
+                        // set the value to save in the object
+                        obj[ j$(this).attr('data-input') ] = (val===undefined || val == "") ? null : val;
+                    }
+                });
+                
+                //save using JS Remoting
+                console.log('SAVING: \n' + JSON.stringify(obj));
+                Visualforce.remoting.Manager.invokeAction(
+                '{!$RemoteAction.EventCheckinController.saveNewContact}', JSON.stringify(obj),
+                function(result, event){
+                        var modal = j$(".datamodal[data-id='" + modalId + "']");
+                        j$('a.btn', modal).removeClass('disabled');
+
+                   if (event.status) {
+                    location.reload();
+                            
+                   } else {
+                      var err = event.message + ((event.type === 'exception') ? ('\n' + event.where) : '');
+                      //console.log(err);
+
+                      var htm = '<div class="alert alert-error"><button type="button" class="close" data-dismiss="alert">&times;</button><b>Error:</b> ' + err + '</div>';
+                      j$("div#modal-body", modal).first().append(htm);
+                   }
+                }, 
+                {escape: true}
+              ); 
+
+            });
+
+            //////////BEGIN CRAZY STUFF
+            j$.extend( true, j$.fn.dataTable.defaults, {
+                "sDom": "<'row-fluid'<'span6'l><'span6'f>r>t<'row-fluid'<'span6'i><'span6'p>>",
+                "sPaginationType": "bootstrap",
+                "oLanguage": {
+                    "sLengthMenu": "_MENU_ records per page"
+                }
+            } );
+
+
+            /* Default class modification */
+            j$.extend( j$.fn.dataTableExt.oStdClasses, {
+                "sWrapper": "dataTables_wrapper form-inline"
+            } );
+
+
+            /* API method to get paging information */
+            j$.fn.dataTableExt.oApi.fnPagingInfo = function ( oSettings )
+            {
+                return {
+                    "iStart":         oSettings._iDisplayStart,
+                    "iEnd":           oSettings.fnDisplayEnd(),
+                    "iLength":        oSettings._iDisplayLength,
+                    "iTotal":         oSettings.fnRecordsTotal(),
+                    "iFilteredTotal": oSettings.fnRecordsDisplay(),
+                    "iPage":          oSettings._iDisplayLength === -1 ?
+                        0 : Math.ceil( oSettings._iDisplayStart / oSettings._iDisplayLength ),
+                    "iTotalPages":    oSettings._iDisplayLength === -1 ?
+                        0 : Math.ceil( oSettings.fnRecordsDisplay() / oSettings._iDisplayLength )
+                };
+            };
+
+
+            /* Bootstrap style pagination control */
+            j$.extend( j$.fn.dataTableExt.oPagination, {
+                "bootstrap": {
+                    "fnInit": function( oSettings, nPaging, fnDraw ) {
+                        var oLang = oSettings.oLanguage.oPaginate;
+                        var fnClickHandler = function ( e ) {
+                            e.preventDefault();
+                            if ( oSettings.oApi._fnPageChange(oSettings, e.data.action) ) {
+                                fnDraw( oSettings );
+                            }
+                        };
+
+                        j$(nPaging).addClass('pagination').append(
+                            '<ul>'+
+                                '<li class="prev disabled"><a href="#">&larr; '+oLang.sPrevious+'</a></li>'+
+                                '<li class="next disabled"><a href="#">'+oLang.sNext+' &rarr; </a></li>'+
+                            '</ul>'
+                        );
+                        var els = j$('a', nPaging);
+                        j$(els[0]).bind( 'click.DT', { action: "previous" }, fnClickHandler );
+                        j$(els[1]).bind( 'click.DT', { action: "next" }, fnClickHandler );
+                    },
+
+                    "fnUpdate": function ( oSettings, fnDraw ) {
+                        var iListLength = 5;
+                        var oPaging = oSettings.oInstance.fnPagingInfo();
+                        var an = oSettings.aanFeatures.p;
+                        var i, ien, j, sClass, iStart, iEnd, iHalf=Math.floor(iListLength/2);
+
+                        if ( oPaging.iTotalPages < iListLength) {
+                            iStart = 1;
+                            iEnd = oPaging.iTotalPages;
+                        }
+                        else if ( oPaging.iPage <= iHalf ) {
+                            iStart = 1;
+                            iEnd = iListLength;
+                        } else if ( oPaging.iPage >= (oPaging.iTotalPages-iHalf) ) {
+                            iStart = oPaging.iTotalPages - iListLength + 1;
+                            iEnd = oPaging.iTotalPages;
+                        } else {
+                            iStart = oPaging.iPage - iHalf + 1;
+                            iEnd = iStart + iListLength - 1;
+                        }
+
+                        for ( i=0, ien=an.length ; i<ien ; i++ ) {
+                            // Remove the middle elements
+                            j$('li:gt(0)', an[i]).filter(':not(:last)').remove();
+
+                            // Add the new list items and their event handlers
+                            for ( j=iStart ; j<=iEnd ; j++ ) {
+                                sClass = (j==oPaging.iPage+1) ? 'class="active"' : '';
+                                j$('<li '+sClass+'><a href="#">'+j+'</a></li>')
+                                    .insertBefore( j$('li:last', an[i])[0] )
+                                    .bind('click', function (e) {
+                                        e.preventDefault();
+                                        oSettings._iDisplayStart = (parseInt(j$('a', this).text(),10)-1) * oPaging.iLength;
+                                        fnDraw( oSettings );
+                                    } );
+                            }
+
+                            // Add / remove disabled classes from the static elements
+                            if ( oPaging.iPage === 0 ) {
+                                j$('li:first', an[i]).addClass('disabled');
+                            } else {
+                                j$('li:first', an[i]).removeClass('disabled');
+                            }
+
+                            if ( oPaging.iPage === oPaging.iTotalPages-1 || oPaging.iTotalPages === 0 ) {
+                                j$('li:last', an[i]).addClass('disabled');
+                            } else {
+                                j$('li:last', an[i]).removeClass('disabled');
+                            }
+                        }
+                    }
+                }
+            } );
+
+
+            /*
+             * TableTools Bootstrap compatibility
+             * Required TableTools 2.1+
+             */
+            if ( j$.fn.DataTable.TableTools ) {
+                // Set the classes that TableTools uses to something suitable for Bootstrap
+                j$.extend( true, j$.fn.DataTable.TableTools.classes, {
+                    "container": "DTTT btn-group",
+                    "buttons": {
+                        "normal": "btn",
+                        "disabled": "disabled"
+                    },
+                    "collection": {
+                        "container": "DTTT_dropdown dropdown-menu",
+                        "buttons": {
+                            "normal": "",
+                            "disabled": "disabled"
+                        }
+                    },
+                    "print": {
+                        "info": "DTTT_print_info modal"
+                    },
+                    "select": {
+                        "row": "active"
+                    }
+                } );
+
+                // Have the collection use a bootstrap compatible dropdown
+                j$.extend( true, j$.fn.DataTable.TableTools.DEFAULTS.oTags, {
+                    "collection": {
+                        "container": "ul",
+                        "button": "li",
+                        "liner": "a"
+                    }
+                } );
+            }
+            j$('#memberTable').dataTable( {
+                        "sDom": "<'row'<'span6'><'span6'>r>t<'row'<'span5'l><'span3'i><'span4'p>>",
+                        "sPaginationType": "bootstrap",
+                        "iDisplayLength": 100,
+                        "aoColumnDefs": [
+                            { "bSortable": false, "aTargets": [ 5 ] }
+                           ]
+            } );
+            //////////END CRAZY STUFF
+        });
+            
+        function showRowsHostFilter(cName) {
+            
+            if (cName == 'All') {
+            j$('tr.dataRow').show(300);
+           } else {
+            j$('tr.dataRow').hide();
+               j$("[data-host='" + cName + "']").show(200);
+            }
+        }
+
+        function showRowsProgressFilter(cName) {
+            
+            if (cName == 'All') {
+            j$('tr.dataRow').show(300);
+           } else {
+            j$('tr.dataRow').hide();
+               j$("tr[data-progress!='0']").show(200);
+            }
+        }
+
+        function clearFilter() {
+            j$("#searchFilter").val('');
+            j$("#hostFilter").val('All');
+        j$('tr.dataRow').show(300);
+        }
+
+        function showRowsSearchFilter(term) {
+            
+            if (term == '') {
+            j$('tr.dataRow').show(300);
+           } else {
+            j$('tr.dataRow').hide();
+               j$("[data-filter*='" + term + "']").show(200);
+            }
+        }
+
+        
+    </script>
+
+    <div id="pageHeader" class="container" style="margin-left:30px;">
+        <div class="row">
+            <h5>HELPSudan 2013 Fundraiser Check In</h5>
+        </div>
+        <div class="row well" style="margin-bottom:10px;">
+                <form class="form-inline">
+                        <label class="span3">
+                            <select id="progressFilter" name="progressFilter" class="span3">
+                                <option value="notCheckedIn">Not Checked In</option>
+                                <option value="All">All</option>
+                            </select>
+                        </label>
+                        <label class="span4">Table Host:
+                            <select id="hostFilter" name="hostFilter" class="span3">
+                                <apex:repeat value="{!filterOptions}" var="opt">
+                                    <apex:outputPanel rendered="{!filter==opt.value}">
+                                        <option value="{!opt.value}" selected="selected">{!opt.label}</option>
+                                    </apex:outputPanel>
+                                    <apex:outputPanel rendered="{!filter!=opt.value}">
+                                        <option value="{!opt.value}">{!opt.label}</option>
+                                    </apex:outputPanel>
+                                </apex:repeat>
+                            </select>
+                        </label>
+                        <label class="span4">
+                            <input type="text" id="searchFilter" name="searchFilter" class="span3" placeholder="search" />
+                        </label>
+                        <a class="btn pull-right" data-toggle="modal" href="#contact" style="margin-top:2px;"><i class="icon-plus"></i></a>
+                </form>
+        </div>
+        <div class="row">
+            <table id="memberTable" class="table tablesorter table-striped table-bordered dataTable">
+                <thead >
+                    <th class="header">
+                        First Name
+                    </th>
+                    <th class="header">
+                        Last Name
+                    </th>
+                    <th class="header">
+                        Table Host
+                    </th>
+                    <th class="header">
+                        Status
+                    </th>
+                    <th class="header" style="width:160px;">
+                        Progress
+                    </th>
+                    <th class="header">
+                        Check In
+                    </th>
+                </thead>
+                <tbody>
+                    <apex:repeat value="{!allMembers}" var="cm">
+                        <tr class="dataRow" data-id="{!cm.id}" data-progress="{!cm.Number_of_Guests__c-cm.Guests_Checked_In__c}" data-filter="{!cm.Contact.FirstName} {!cm.Contact.LastName} {!cm.Guest_Host__r.FirstName} {!cm.Guest_Host__r.LastName} {!LOWER(cm.Contact.FirstName)} {!LOWER(cm.Contact.LastName)} {!LOWER(cm.Guest_Host__r.FirstName)} {!LOWER(cm.Guest_Host__r.LastName)}" data-host="{!cm.Guest_Host__r.FirstName} {!cm.Guest_Host__r.LastName}">
+                            <td>
+                                {!cm.Contact.FirstName}
+                            </td>
+                            <td>
+                                {!cm.Contact.LastName}
+                            </td>
+                            <td>
+                                {!cm.Guest_Host__r.FirstName} {!cm.Guest_Host__r.LastName}
+                            </td>
+                            <td>
+                                {!cm.Status}
+                            </td>
+                            <td >
+                                <div style="width:94%;margin:auto;">
+                                    <div class="progress" >
+                                      <div class="bar bar-success" style="width:{!(cm.Guests_Checked_In__c/cm.Number_of_Guests__c)*100}%;">{!ROUND((cm.Guests_Checked_In__c/cm.Number_of_Guests__c)*100,0)}%</div>
+                                      <div class="bar bar-warning" style="width:{!(cm.Remaining_Check_Ins__c/cm.Number_of_Guests__c)*100}%;"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td style="text-align:center; min-width:56px;" >
+                                <a class="btn btn-small editButton viewOnly" data-toggle="modal" href="#member{!cm.id}"><i class="icon-pencil"></i></a>
+                            </td>
+                        </tr>
+                    </apex:repeat>
+                </tbody>
+            </table>
+        </div>
+        <div class="row" style="margin-top:20px;">
+            <div class="well">
+                <h2>Total Event Checkin Progress <small>{!ROUND(totalCheckedIn,0)} of {!ROUND(totalGuests,0)} Guests</small></h2>
+                <div class="progress" >
+                  <div class="bar bar-success" style="width:{!(totalCheckedIn/totalGuests)*100}%;">{!ROUND((totalCheckedIn/totalGuests)*100,0)}%</div>
+                  <div class="bar bar-warning" style="width:{!((totalGuests-totalCheckedIn)/totalGuests)*100}%;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+
+    <apex:repeat value="{!allMembers}" var="cm">
+        <div id="member{!cm.id}" data-id="{!cm.Id}" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+                <h3 id="myModalLabel">{!cm.Contact.FirstName} {!cm.Contact.LastName} <small>{!cm.status}</small></h3>
+            </div>
+            <div class="modal-body" style="text-align:center;">
+                <table width="100%">
+                    <tr>
+                        <apex:outputPanel rendered="{!cm.Remaining_Check_Ins__c=0}">
+                            <div class="alert alert-error">
+                                {!cm.Contact.FirstName} {!cm.Contact.LastName} is checked in!
+                            </div>
+                        </apex:outputPanel>
+                        <td>
+                            <div class="span2">
+                                <div class="well" >
+                                    <p><h5>Total</h5></p>
+                                    <h3>{!cm.Number_of_Guests__c}</h3>
+                                </div>
+                            </div>
+                            <div class="span2">
+                                <div class="well">
+                                    <p><h5>Checked In</h5></p>
+                                    <h3>{!cm.Guests_Checked_In__c}</h3>
+                                </div>
+                            </div>
+                            <div class="span2">
+                                <div class="well">
+                                    <p><h5>Remaining</h5></p>
+                                    <h3>{!cm.Remaining_Check_Ins__c}</h3>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <form>
+                                <apex:outputPanel rendered="{!cm.Remaining_Check_Ins__c>0}">
+                                    <label>How many are you checking in?</label>
+                                    <div data-input="Guests_Checked_In__c" data-value="{!cm.Guests_Checked_In__c}">
+                                        <select>
+                                            <apex:outputPanel rendered="{!cm.Remaining_Check_Ins__c>0}">
+                                                <option value="1">1</option>
+                                            </apex:outputPanel>
+                                            <apex:outputPanel rendered="{!cm.Remaining_Check_Ins__c>1}">
+                                                <option value="2">2</option>
+                                            </apex:outputPanel>
+                                            <apex:outputPanel rendered="{!cm.Remaining_Check_Ins__c>2}">
+                                                <option value="3">3</option>
+                                            </apex:outputPanel>
+                                            <apex:outputPanel rendered="{!cm.Remaining_Check_Ins__c>3}">
+                                                <option value="4">4</option>
+                                            </apex:outputPanel>
+                                            <apex:outputPanel rendered="{!cm.Remaining_Check_Ins__c>4}">
+                                                <option value="5">5</option>
+                                            </apex:outputPanel>
+                                            <apex:outputPanel rendered="{!cm.Remaining_Check_Ins__c>5}">
+                                                <option value="6">6</option>
+                                            </apex:outputPanel>
+                                            <apex:outputPanel rendered="{!cm.Remaining_Check_Ins__c>6}">
+                                                <option value="7">7</option>
+                                            </apex:outputPanel>
+                                            <apex:outputPanel rendered="{!cm.Remaining_Check_Ins__c>7}">
+                                                <option value="8">8</option>
+                                            </apex:outputPanel>
+                                        </select>
+                                    </div>
+                                </apex:outputPanel>
+                                <label>Notes</label>
+                                <div data-input="Notes__c" data-value="{!cm.Notes__c}">
+                                    <textarea rows="3" >{!cm.Notes__c}</textarea>
+                                </div>
+                            </form>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" data-dismiss="modal" aria-hidden="true">Close</button>
+                <button class="btn btn-primary saveButton">Save changes</button>
+            </div>
+        </div>
+    </apex:repeat>
+
+    <div id="contact" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+                <h3 id="myModalLabel">New Registrant</h3>
+            </div>
+            <div class="modal-body" style="text-align:center;">
+                <table width="100%">
+                    <tr>
+                        <td>
+                            <form>
+                                <!-- <label>First Name</label> -->
+                                <div data-input="FirstName" data-value="{!newContact.FirstName}">
+                                    <input type="text" placeholder="First Name"/>
+                                </div>
+                                    <!-- <label>Last Name</label> -->
+                                <div data-input="LastName" data-value="{!newContact.LastName}">
+                                    <input type="text" placeholder="Last Name"/>
+                                </div>
+                                    <!-- <label>Email</label> -->
+                                <div data-input="Email" data-value="{!newContact.Email}">
+                                    <input type="email" placeholder="Email"/>
+                                </div>
+                                    <label>How many Guests?</label>
+                                <div data-input="numberGuests" data-value="{!newContact.numberGuests}">
+                                    <select>
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
+                                        <option value="3">3</option>
+                                        <option value="4">4</option>
+                                        <option value="5">5</option>
+                                        <option value="6">6</option>
+                                        <option value="7">7</option>
+                                        <option value="8">8</option>
+                                    </select>
+                                </div>
+                                    <label>How many are you checking in?</label>
+                                <div data-input="guestsCheckedIn" data-value="{!newContact.guestsCheckedIn}">
+                                    <select>
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
+                                        <option value="3">3</option>
+                                        <option value="4">4</option>
+                                        <option value="5">5</option>
+                                        <option value="6">6</option>
+                                        <option value="7">7</option>
+                                        <option value="8">8</option>
+                                    </select>
+                                </div>
+                                    <label>Notes</label>
+                                <div data-input="Notes" data-value="{!newContact.Notes}">
+                                    <textarea rows="3" ></textarea>
+                                </div>
+                            </form>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" data-dismiss="modal" aria-hidden="true">Close</button>
+                <button class="btn btn-primary contactSaveButton">Save changes</button>
+            </div>
+        </div>
+
+
+</apex:page>
